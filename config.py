@@ -1,8 +1,8 @@
 """Конфиг бота Бобик 2.0 — чат + картинки + видео через Google Cloud (Vertex AI)."""
 import os
 
-ALLOWED_USERS = {443612929, 931305201}  # Vak, Timofiy
-USER_NAMES = {443612929: "Vak", 931305201: "Тимофий"}
+ALLOWED_USERS = {443612929}  # только Vak
+USER_NAMES = {443612929: "Vak"}
 
 GCP_PROJECT = os.environ.get("GCP_PROJECT", "")
 GCP_LOCATION = os.environ.get("GCP_LOCATION", "us-central1")
