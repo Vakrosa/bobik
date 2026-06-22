@@ -38,10 +38,10 @@ async def safe_send(update, text, **kwargs):
         kw = dict(kwargs) if idx == last else {}
         kw.setdefault('disable_web_page_preview', True)
         try:
-            await update.message.reply_text(ch, **kw)
+            await update.effective_message.reply_text(ch, **kw)
         except Exception:
             try:
-                await update.message.reply_text(ch[:TG_LIMIT])
+                await update.effective_message.reply_text(ch[:TG_LIMIT])
             except Exception:
                 pass
 
@@ -89,10 +89,10 @@ def cyc(lst, cur): return lst[(lst.index(cur) + 1) % len(lst)] if cur in lst els
 # ---------- ХЭНДЛЕРЫ ----------
 async def start(update, ctx):
     if not allowed(update):
-        return await update.message.reply_text("⛔ Доступ только для владельцев.")
+        return await update.effective_message.reply_text("⛔ Доступ только для владельцев.")
     s = st(update.effective_user.id); s["mode"] = None; s["await"] = None
-    await update.message.reply_text(
-        "👋 Привет! Я Бобик v18 — работаю через Google Cloud.\n"
+    await update.effective_message.reply_text(
+        "👋 Привет! Я Бобик v19 — работаю через Google Cloud.\n"
         "Пишу/слушаю/вижу и помню наши прошлые разговоры.\n"
         "Можно текстом, 🎤 голосом или 📸 фото.\nВыбери, что делаем:",
         reply_markup=main_menu())
@@ -100,12 +100,35 @@ async def start(update, ctx):
 async def forget_cmd(update, ctx):
     if not allowed(update): return
     memory.forget(update.effective_user.id)
-    await update.message.reply_text("🧽 Память очищена. Начинаем с чистого листа.")
+    await update.effective_message.reply_text("🧽 Память очищена. Начинаем с чистого листа.")
 
 async def on_cb(update, ctx):
     if not allowed(update): return
     q = update.callback_query; await q.answer()
     uid = update.effective_user.id; s = st(uid); d = q.data
+
+    if d.startswith("ph:"):
+        photo = s.get("pending_photo"); cap = s.get("pending_caption", "")
+        if not photo:
+            return await q.edit_message_text("Фото потерялось — пришли заново.")
+        act = d.split(":")[1]
+        if act == "vid":
+            s["await"] = None
+            await q.edit_message_text("🎬 Делаю видео из фото…")
+            return await run_video(update, ctx, uid, s, prompt=cap or "Оживи это фото, красиво", photo=photo)
+        if act == "img":
+            s["await"] = None
+            await q.edit_message_text("🖼 Переделываю фото…")
+            return await run_image(update, ctx, uid, s, prompt=cap or "Улучши и преобрази это фото", photo=photo)
+        await q.edit_message_text("👀 Смотрю фото…")
+        try:
+            desc = await asyncio.to_thread(gcp_media.describe_image, photo,
+                                           cap or "Опиши это изображение подробно: стиль, цвета, детали, настроение.")
+        except Exception as e:
+            return await update.effective_message.reply_text(f"Не смог разглядеть фото: {e}")
+        if act == "team":
+            return await run_team(update, ctx, uid, s, task=f"{cap}\n\n[Пользователь прислал фото. Что на нём: {desc}]")
+        return await update.effective_message.reply_text(f"📸 На фото: {desc}")
 
     if d == "m:home":
         s["mode"] = None; s["await"] = None
@@ -208,7 +231,7 @@ async def handle_text(update, ctx, uid, s, txt):
         try:
             ans = await asyncio.to_thread(gcp_media.chat, msgs, s["chat_model"])
         except Exception as e:
-            return await update.message.reply_text(f"Ошибка чата: {e}")
+            return await update.effective_message.reply_text(f"Ошибка чата: {e}")
         memory.add(uid, "model", ans)
         usage_db.log(uid, "chat", config.PRICE_CHAT)
         await safe_send(update, ans)
@@ -217,20 +240,20 @@ async def handle_text(update, ctx, uid, s, txt):
     if a == "team": return await run_team(update, ctx, uid, s, task=txt)
     if a == "img_text": return await run_image(update, ctx, uid, s, prompt=txt)
     if a == "vid_text": return await run_video(update, ctx, uid, s, prompt=txt)
-    await update.message.reply_text("Открой меню: /start")
+    await update.effective_message.reply_text("Открой меню: /start")
 
 async def on_text(update, ctx):
     if not allowed(update): return
     uid = update.effective_user.id; s = st(uid)
-    await handle_text(update, ctx, uid, s, update.message.text)
+    await handle_text(update, ctx, uid, s, update.effective_message.text)
 
 async def on_voice(update, ctx):
     if not allowed(update): return
     uid = update.effective_user.id; s = st(uid)
-    v = update.message.voice or update.message.audio
+    v = update.effective_message.voice or update.effective_message.audio
     if v is None: return
     if (getattr(v, 'file_size', 0) or 0) > 19_000_000:
-        return await update.message.reply_text('🎤 Файл великоват (>20 МБ) — Telegram не даёт мне его скачать. Запиши короче или напиши текстом.')
+        return await update.effective_message.reply_text('🎤 Файл великоват (>20 МБ) — Telegram не даёт мне его скачать. Запиши короче или напиши текстом.')
     await ctx.bot.send_chat_action(update.effective_chat.id, "typing")
     f = await v.get_file()
     buf = io.BytesIO(); await f.download_to_memory(buf)
@@ -238,10 +261,10 @@ async def on_voice(update, ctx):
     try:
         txt = await asyncio.to_thread(gcp_media.transcribe, buf.getvalue(), mime)
     except Exception as e:
-        return await update.message.reply_text(f"Не разобрал голос: {e}")
+        return await update.effective_message.reply_text(f"Не разобрал голос: {e}")
     if not txt:
-        return await update.message.reply_text("🎤 Пустое голосовое — повтори?")
-    await update.message.reply_text(f"🎤 Услышал: {txt}")
+        return await update.effective_message.reply_text("🎤 Пустое голосовое — повтори?")
+    await update.effective_message.reply_text(f"🎤 Услышал: {txt}")
     if s.get("await") is None:
         s["mode"] = "chat"; s["await"] = "chat"
     await handle_text(update, ctx, uid, s, txt)
@@ -249,10 +272,10 @@ async def on_voice(update, ctx):
 async def run_team(update, ctx, uid, s, task):
     chat_id = update.effective_chat.id
     if s.get("busy"):
-        return await update.message.reply_text("⏳ Секунду — ещё дорабатываю прошлую задачу.")
+        return await update.effective_message.reply_text("⏳ Секунду — ещё дорабатываю прошлую задачу.")
     est = config.PRICE_CHAT * 8
     if not usage_db.can_spend(uid, est, config.DAILY_LIMIT_USD):
-        return await update.message.reply_text(f"⛔ Дневной лимит ${config.DAILY_LIMIT_USD:.2f} исчерпан.")
+        return await update.effective_message.reply_text(f"⛔ Дневной лимит ${config.DAILY_LIMIT_USD:.2f} исчерпан.")
     s["busy"] = True
     try:
         nts = memory.notes(uid)
@@ -261,7 +284,7 @@ async def run_team(update, ctx, uid, s, task):
         try:
             keys = await asyncio.to_thread(agents.plan, task_full)
         except Exception as e:
-            return await update.message.reply_text(f"Ошибка команды: {e}")
+            return await update.effective_message.reply_text(f"Ошибка команды: {e}")
         names = ", ".join(agents.ROLES[k][0] for k in keys)
         await safe_send(update, f"👥 Над задачей работают: {names}\nОбсуждают…")
         transcript = []
@@ -296,9 +319,9 @@ async def run_team(update, ctx, uid, s, task):
 async def on_photo(update, ctx):
     if not allowed(update): return
     uid = update.effective_user.id; s = st(uid); a = s.get("await")
-    f = await update.message.photo[-1].get_file()
+    f = await update.effective_message.photo[-1].get_file()
     buf = io.BytesIO(); await f.download_to_memory(buf); photo = buf.getvalue()
-    caption = update.message.caption or ""
+    caption = update.effective_message.caption or ""
     # режим генерации из фото
     if a == "img_photo":
         prompt = caption or "Улучши и преобрази это фото"
@@ -306,66 +329,61 @@ async def on_photo(update, ctx):
     if a == "vid_photo":
         prompt = caption or "Оживи это фото, сделай красивое видео"
         return await run_video(update, ctx, uid, s, prompt=prompt, photo=photo)
-    # иначе — ЗРЕНИЕ: рассмотреть фото и обработать по режиму
-    await update.message.reply_text("👀 Рассматриваю фото…")
-    await ctx.bot.send_chat_action(update.effective_chat.id, "typing")
-    try:
-        desc = await asyncio.to_thread(
-            gcp_media.describe_image, photo,
-            (caption or "Опиши это изображение подробно: что на нём, стиль, цвета, детали, настроение."))
-    except Exception as e:
-        return await update.message.reply_text(f"Не смог разглядеть фото: {e}")
-    if s.get("mode") == "team" or a == "team":
-        task = f"{caption}\n\n[Пользователь прислал изображение. Что на нём: {desc}]"
-        return await run_team(update, ctx, uid, s, task=task)
-    if s.get("await") != "chat":
-        s["mode"] = "chat"; s["await"] = "chat"
-    text = caption or "Что скажешь об этом изображении?"
-    return await handle_text(update, ctx, uid, s, f"{text}\n\n[Содержимое присланного фото: {desc}]")
+    # иначе — спросить кнопками, что сделать с фото (чтобы не путать режимы)
+    s["pending_photo"] = photo
+    s["pending_caption"] = caption
+    kb = M([
+        [B("🎬 Сделать видео из фото", callback_data="ph:vid")],
+        [B("🖼 Переделать/улучшить картинку", callback_data="ph:img")],
+        [B("👥 Обсудить командой", callback_data="ph:team"), B("💬 Описать/ответить", callback_data="ph:desc")],
+    ])
+    await update.effective_message.reply_text(
+        "📸 Фото получил. Что с ним сделать?" + (f"\n(подпись: «{caption}»)" if caption else ""),
+        reply_markup=kb)
 
 async def run_image(update, ctx, uid, s, prompt, photo=None):
     est = est_img(s)
     if not usage_db.can_spend(uid, est, config.DAILY_LIMIT_USD):
-        return await update.message.reply_text(f"⛔ Дневной лимит ${config.DAILY_LIMIT_USD:.2f} исчерпан.")
+        return await update.effective_message.reply_text(f"⛔ Дневной лимит ${config.DAILY_LIMIT_USD:.2f} исчерпан.")
     s["await"] = None
-    await update.message.reply_text("🖼 Генерирую…")
+    await update.effective_message.reply_text("🖼 Генерирую…")
     await ctx.bot.send_chat_action(update.effective_chat.id, "upload_photo")
     try:
         imgs = await asyncio.to_thread(gcp_media.gen_image, prompt, s["img"]["aspect"], s["img"]["count"], photo)
     except Exception as e:
-        return await update.message.reply_text(f"Ошибка картинки: {e}")
+        return await update.effective_message.reply_text(f"Ошибка картинки: {e}")
     usage_db.log(uid, "image", est)
-    for b in imgs: await update.message.reply_photo(io.BytesIO(b))
-    await update.message.reply_text(f"Готово. ~${est:.2f}. Ещё?", reply_markup=img_menu(s))
+    for b in imgs: await update.effective_message.reply_photo(io.BytesIO(b))
+    await update.effective_message.reply_text(f"Готово. ~${est:.2f}. Ещё?", reply_markup=img_menu(s))
 
 async def run_video(update, ctx, uid, s, prompt, photo=None):
     est = est_vid(s)
     if not usage_db.can_spend(uid, est, config.DAILY_LIMIT_USD):
-        return await update.message.reply_text(f"⛔ Дневной лимит ${config.DAILY_LIMIT_USD:.2f} исчерпан.")
+        return await update.effective_message.reply_text(f"⛔ Дневной лимит ${config.DAILY_LIMIT_USD:.2f} исчерпан.")
     s["await"] = None
-    await update.message.reply_text(f"🎬 Генерирую видео (~{s['vid']['seconds']}с, пару минут)…")
+    await update.effective_message.reply_text(f"🎬 Генерирую видео (~{s['vid']['seconds']}с, пару минут)…")
     await ctx.bot.send_chat_action(update.effective_chat.id, "upload_video")
     v = s["vid"]
     try:
         vids = await asyncio.to_thread(gcp_media.gen_video, prompt, v["model"] == "fast",
                                        v["seconds"], v["aspect"], v["audio"], v["count"], photo)
     except Exception as e:
-        return await update.message.reply_text(f"Ошибка видео: {e}")
+        return await update.effective_message.reply_text(f"Ошибка видео: {e}")
     usage_db.log(uid, "video", est)
-    for b in vids: await update.message.reply_video(io.BytesIO(b))
-    await update.message.reply_text(f"Готово. ~${est:.2f}. Ещё?", reply_markup=vid_menu(s))
+    for b in vids: await update.effective_message.reply_video(io.BytesIO(b))
+    await update.effective_message.reply_text(f"Готово. ~${est:.2f}. Ещё?", reply_markup=vid_menu(s))
 
 async def on_document(update, ctx):
     if not allowed(update): return
     uid = update.effective_user.id; s = st(uid)
-    doc = update.message.document
+    doc = update.effective_message.document
     if doc is None: return
     name = doc.file_name or "файл"
     low = name.lower()
     size = getattr(doc, "file_size", 0) or 0
-    caption = update.message.caption or ""
+    caption = update.effective_message.caption or ""
     if size > 19_000_000:
-        return await update.message.reply_text(
+        return await update.effective_message.reply_text(
             f"📎 «{name}» больше 20 МБ — Telegram не даёт мне его скачать. "
             "Пришли файл поменьше или опиши задачу текстом/голосом.")
     f = await doc.get_file()
@@ -378,18 +396,18 @@ async def on_document(update, ctx):
             s["mode"] = "chat"; s["await"] = "chat"
         return await handle_text(update, ctx, uid, s, combined)
     if low.endswith((".wav", ".mp3", ".ogg", ".m4a", ".aac", ".flac")):
-        await update.message.reply_text("🎧 Слушаю аудио…")
+        await update.effective_message.reply_text("🎧 Слушаю аудио…")
         try:
             txt = await asyncio.to_thread(gcp_media.transcribe, data, getattr(doc, "mime_type", None) or "audio/wav")
         except Exception as e:
-            return await update.message.reply_text(f"Не разобрал аудио: {e}")
+            return await update.effective_message.reply_text(f"Не разобрал аудио: {e}")
         if not txt:
-            return await update.message.reply_text("Не смог распознать аудио. Опиши задачу текстом.")
-        await update.message.reply_text(f"🎧 Распознал из аудио: {txt[:500]}")
+            return await update.effective_message.reply_text("Не смог распознать аудио. Опиши задачу текстом.")
+        await update.effective_message.reply_text(f"🎧 Распознал из аудио: {txt[:500]}")
         if s.get("await") is None:
             s["mode"] = "chat"; s["await"] = "chat"
         return await handle_text(update, ctx, uid, s, (caption + "\n" + txt) if caption else txt)
-    return await update.message.reply_text(
+    return await update.effective_message.reply_text(
         f"📎 Файл «{name}» пока не читаю. Пришли .txt, фото, голосовое — или опиши словами.")
 
 def build_application():
