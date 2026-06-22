@@ -71,7 +71,7 @@ def img_menu(s):
 
 def vid_menu(s):
     v = s["vid"]
-    model = "Veo Fast" if v["model"] == "fast" else "Veo 3.1"
+    model = {"lite": "Veo 3.1 Lite", "std": "Veo 3.1", "fast": "Veo Fast"}.get(v["model"], "Veo 3.1")
     audio = "🔊 Вкл" if v["audio"] else "🔇 Выкл"
     return M([
         [B(f"🎞 {model}", callback_data="v:model"), B(f"⏱ {v['seconds']}с", callback_data="v:seconds")],
@@ -92,7 +92,7 @@ async def start(update, ctx):
         return await update.effective_message.reply_text("⛔ Доступ только для владельцев.")
     s = st(update.effective_user.id); s["mode"] = None; s["await"] = None
     await update.effective_message.reply_text(
-        "👋 Привет! Я Бобик v19 — работаю через Google Cloud.\n"
+        "👋 Привет! Я Бобик v20 — работаю через Google Cloud.\n"
         "Пишу/слушаю/вижу и помню наши прошлые разговоры.\n"
         "Можно текстом, 🎤 голосом или 📸 фото.\nВыбери, что делаем:",
         reply_markup=main_menu())
@@ -162,7 +162,7 @@ async def on_cb(update, ctx):
     elif d == "i:gophoto":
         s["await"] = "img_photo"
         return await q.edit_message_text("📸 Пришли СВОЁ фото. В подписи напиши, что с ним сделать. Без подписи — просто улучшу.")
-    elif d == "v:model": s["vid"]["model"] = "std" if s["vid"]["model"] == "fast" else "fast"
+    elif d == "v:model": s["vid"]["model"] = {"fast": "lite", "lite": "std", "std": "fast"}.get(s["vid"]["model"], "fast")
     elif d == "v:seconds": s["vid"]["seconds"] = cyc(CYCLE["v_seconds"], s["vid"]["seconds"])
     elif d == "v:aspect": s["vid"]["aspect"] = cyc(CYCLE["v_aspect"], s["vid"]["aspect"])
     elif d == "v:audio": s["vid"]["audio"] = not s["vid"]["audio"]
@@ -212,7 +212,7 @@ def balance_text(uid):
 def est_img(s): return config.PRICE_IMAGE * s["img"]["count"]
 def est_vid(s):
     v = s["vid"]
-    rate = config.PRICE_VIDEO_SEC_FAST if v["model"] == "fast" else (
+    rate = config.PRICE_VIDEO_SEC_FAST if v["model"] in ("fast", "lite") else (
         config.PRICE_VIDEO_SEC_AUDIO if v["audio"] else config.PRICE_VIDEO_SEC)
     return rate * v["seconds"] * v["count"]
 
@@ -365,7 +365,8 @@ async def run_video(update, ctx, uid, s, prompt, photo=None):
     await ctx.bot.send_chat_action(update.effective_chat.id, "upload_video")
     v = s["vid"]
     try:
-        vids = await asyncio.to_thread(gcp_media.gen_video, prompt, v["model"] == "fast",
+        mid = {"lite": config.VIDEO_MODEL_LITE, "std": config.VIDEO_MODEL_STD, "fast": config.VIDEO_MODEL_FAST}.get(v["model"], config.VIDEO_MODEL_FAST)
+        vids = await asyncio.to_thread(gcp_media.gen_video, prompt, mid,
                                        v["seconds"], v["aspect"], v["audio"], v["count"], photo)
     except Exception as e:
         return await update.effective_message.reply_text(f"Ошибка видео: {e}")
