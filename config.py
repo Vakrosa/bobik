@@ -12,6 +12,7 @@ CHAT_MODEL = os.environ.get("CHAT_MODEL", "gemini-2.5-flash")
 IMAGE_MODEL = os.environ.get("IMAGE_MODEL", "gemini-2.5-flash-image")
 VIDEO_MODEL_STD = os.environ.get("VIDEO_MODEL_STD", "veo-3.1-generate-001")
 VIDEO_MODEL_FAST = os.environ.get("VIDEO_MODEL_FAST", "veo-3.1-fast-generate-001")
+VIDEO_MODEL_LITE = os.environ.get("VIDEO_MODEL_LITE", "veo-3.1-lite-generate-001")
 
 # Примерные цены ($) для оценки расходов
 PRICE_IMAGE = float(os.environ.get("PRICE_IMAGE", "0.04"))
