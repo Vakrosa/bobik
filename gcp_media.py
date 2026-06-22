@@ -57,9 +57,9 @@ def gen_image(prompt, aspect="1:1", count=1, photo_bytes=None):
     return out
 
 # ---------- ВИДЕО ----------
-def gen_video(prompt, fast=True, seconds=6, aspect="16:9", audio=False,
+def gen_video(prompt, model_id=None, seconds=6, aspect="16:9", audio=False,
               count=1, photo_bytes=None, poll_timeout=600):
-    model = config.VIDEO_MODEL_FAST if fast else config.VIDEO_MODEL_STD
+    model = model_id or config.VIDEO_MODEL_FAST
     cfg = types.GenerateVideosConfig(
         number_of_videos=max(1, int(count)),
         duration_seconds=int(seconds),
